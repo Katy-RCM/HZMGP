@@ -16,29 +16,20 @@ parameters{
   vector[Nbetas_mu] beta2;
 }
 
-transformed parameters {
-  
-  real phi = exp(theta1);    
-  real lambda = exp(theta2); 
-  real gama = exp(theta3);   
-  
-  vector[n] omega; 
-
-  // X' * beta1
-  for (i in 1:n) {
-    omega[i] = (exp(x1[i,]*beta1))/(1+exp(x1[i,]*beta1)); 
-  }
-  
+transformed parameters{
+  real phi = exp(theta1);
+  real lambda = exp(theta2);
+  real gama = exp(theta3);
+  vector[n] omega;
   vector[n] mu; 
 
-  // X' * beta2
-  for (i in 1:n) {
-    mu[i] = exp(x2[i,]*beta2); 
-  }
-  
+  for(i in 1:n){ 
+    omega[i] = exp(x1[i,]*beta1)/(1+exp(x1[i,]*beta1));
+    mu[i] = exp(x2[i,]*beta2);
+  }  
 }
 
-model {
+model{
   vector[n] s0;
   vector[n] h0;
   vector[n] b;
@@ -47,25 +38,22 @@ model {
   vector[n] ht;
   vector[n] p;
   
-  
-  // Likelihood using hazard function
+  // Likelihood
   for (i in 1:n){
-    
     s0[i]    = exp(-lambda * t[i]^gama);    // Baseline survival function
     h0[i]    = gama*lambda*(t[i]^(gama-1)); // Baseline hazard function
     b[i]     = mu[i]*phi/(1+(mu[i]*phi));
     lamfc[i] = lambert_w0(-b[i]*s0[i]*exp(-b[i]));
     p[i]     = omega[i]/(1-exp(-mu[i]/(1+(mu[i])*phi)));
-    st[i]    = 1-p[i]+p[i]*exp((-1/phi)*(lamfc[i] + b[i]));  // Survival function
+    st[i]    = 1-p[i]+p[i]*exp((-1/phi)*(lamfc[i] + b[i])); // Survival function
     ht[i]    = (-p[i]*h0[i]*exp((-1/phi)*(lamfc[i]+ b[i]))/(phi*st[i]))*(lamfc[i]/(1+lamfc[i])); // Hazard function
-    target += delta[i] * log(ht[i]) + log(st[i]);  
+    target  += delta[i] * log(ht[i]) + log(st[i]);  
   }
     
-  // Prior distributions for parameters
-
+  // Priors
   target += normal_lpdf(theta1 | 0, 10);  // phi
+  target += normal_lpdf(beta1 | 0, 10);   // Coefficients of omega
+  target += normal_lpdf(beta2 | 0, 10);   // Coefficients of mu
   target += normal_lpdf(theta2 | 0, 10);  // lambda
-  target += normal_lpdf(theta3 | 0, 10);  // gama
-  target += normal_lpdf(beta1 | 0, 10);   // Coefficients omega
-  target += normal_lpdf(beta2 | 0, 10);   // Coefficients mu
+  target += normal_lpdf(theta3 | 0, 10);  // gamma
 }
