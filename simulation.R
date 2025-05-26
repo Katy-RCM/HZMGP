@@ -1,7 +1,3 @@
-#-------------------------------------#
-# Generating the dataset - simulation #
-#-------------------------------------#
-
 require(survival)
 require(lamW)
 require(dplyr)
@@ -22,11 +18,10 @@ st <- function(t,x_1,x_2,phi,lambda,gamma,b00,b10,b20,b01,b11,b21){
   return(st0)
 }
 
-# --- Fixed Parameters ---
-
+# Fixed parameters
 phi    <- 0.13
 lambda <- 0.10
-gamma   <- 1.08
+gamma  <- 1.08
 b00    <- 1.5 # omega
 b10    <- 0.6  
 b20    <- 3.5  
@@ -34,24 +29,19 @@ b01    <- 1.4 # mu
 b11    <- 0.1  
 b21    <- 1.2  
 
-B <- 100   
-n <- 20000 # size N
-
+# Generating data
+B <- 100   # Replicates
+n <- 20000 # Sample size
 data_gen <- list()
 
-# generating data
-
-for (i in 1:B) {
-  
-  cat("Data:", i, "/", B, "\n")
-  
-  set.seed(123+i)
-  
+for(b in 1:B){
+  cat("Data:", b, "/", B, "\n")
+  set.seed(123+b)
   # Generate covariates
-  x_1 <- rnorm(n = n, 0, 1)                     # continuous var
-  x_2 <- rbinom(n = n, size = 1, prob = 0.84)   # dummy var
+  x_1 <- rnorm(n = n, 0, 1)                     # Continuous var
+  x_2 <- rbinom(n = n, size = 1, prob = 0.8)    # Dummy var
   
-  data <- tibble(x_1 = x_1, x_2 = x_2 ) %>% 
+  data <- tibble(x_1 = x_1, x_2 = x_2) %>% 
     mutate(phi = phi, lambda = lambda, gamma = gamma, b00 = b00, b10 = b10, b20 = b20, b01 = b01, b11 = b11, b21 = b21) %>% 
     mutate(t = purrr::pmap_dbl(.l = list(phi, lambda, gamma, b00, b10, b20, b01, b11, b21, x_1, x_2), .f = function(p, l, g, b_0, b_1, b_2, b_3, b_4, b_5, x, z) {
       u <- runif(1)
@@ -65,41 +55,33 @@ for (i in 1:B) {
     mutate(t = ifelse(is.infinite(t), max(t[is.finite(t)]), t))
   
   # Final data frame for this dataset
-  
   t_final     <- (data$t) + 0.001 
   delta_final <- data$cens      
-  x_final     <- data$x_1       # continuous var
-  z_final     <- data$x_2       # dummy var
+  x_final     <- data$x_1       # Continuous var
+  z_final     <- data$x_2       # Dummy var
   
-  data_gen[[i]] <- data.frame(t = t_final, delta = delta_final, x = x_final, z = z_final)
+  data_gen[[b]] <- data.frame(t = t_final, delta = delta_final, x = x_final, z = z_final)
 } 
 
 # Simulation process
-
 data_address  <- "data_sim2.RData"
-stan_address  <- 'zmpg_model.stan'
-output_address <- " "
+stan_address  <- "zmpg_model.stan"
+output_address <- ""
 
 load(data_address)
-
-for (i in 1:B) {
-  
-  cat("Fit:", i) 
-  
-  # data extraction
-  data <- data_gen[[i]]
-  
+for(b in 1:B){
+  cat("Fit:", b)
+  # Data extraction
+  data  <- data_gen[[b]]
   tt    <- data$t
   delta <- data$delta
   x     <- data$x
   z     <- data$z
-  
   x1    <- model.matrix(~ x + z, data = data)
   x2    <- model.matrix(~ x + z, data = data)
   
-  set.seed(123+i)
-  
-  # model fit
+  # Model fit
+  set.seed(123+b)
   fit <- stan( file = stan_address,
                    data = list(n = length(t), Nbetas_omega = ncol(x1), Nbetas_mu = ncol(x2),
                                t = tt, delta = delta, x1 = x1, x2 = x2),
@@ -110,26 +92,21 @@ for (i in 1:B) {
   rmv  <- c("omega", "mu", "lp__")
   sim_final <- sim[!(names(sim) %in% rmv)]
   
-  output_name <- paste0("sim2_", i, ".RData")
-  output_address_i <- file.path(output_address, output_name)
-  save(sim_final, file = output_address_i)
+  output_name <- paste0("sim2_", b, ".RData")
+  output_address_b <- file.path(output_address, output_name)
+  save(sim_final, file = output_address_b)
 } 
 
-# Obtaining mean, SD and CP 95
+# Obtaining mean, SD and 95% CP
 N_ <- 20000
-
 # Vector of fixed values
 a0 <- c(phi=0.13, lambda=0.10, gamma=1.08, b00=1.5, b10=0.6, b20=3.5, b01=1.4, b11=0.1, b21=1.2)
-
-pmean <- matrix(NA, ncol=length(a0),   nrow=B)  
+pmean <- matrix(NA, ncol=length(a0), nrow=B)  
 ci95   <- matrix(NA, ncol=2*length(a0), nrow=B)   
-cp95   <- matrix(NA, ncol=length(a0),   nrow=B)   
+cp95   <- matrix(NA, ncol=length(a0), nrow=B)   
 
-
-for (b in 1:B) {
-  
-  load(paste0("sim2_", b, ".RData"))
-  
+for(b in 1:B){
+  load(paste0("sim2_", b, ".RData")) 
   pmean[b, ] <- c(
     round(mean(sim_final$phi), 3),
     round(mean(sim_final$lambda), 3),
@@ -152,18 +129,17 @@ for (b in 1:B) {
     round(quantile(sim_final$beta2[,2], c(0.025, 0.975)), 3),
     round(quantile(sim_final$beta2[,3], c(0.025, 0.975)), 3))
   
-  for (j in 1:9) {
-    if (ci95[b, (2*j-1)] <= a0[j] && ci95[b, (2*j)] >= a0[j]) {
+  for(j in 1:9){
+    if(ci95[b, (2*j-1)] <= a0[j] && ci95[b, (2*j)] >= a0[j]){
       cp95[b, j] <- 1
-    } else {
+    }else{
       cp95[b, j] <- 0
     }
   }
-  print(b)
+  # print(b)
 }
 
-output1 <- list(pmean = pmean,cp95 = cp95)
-
+output1 <- list(pmean = pmean, cp95 = cp95)
 output_final <- data.frame(
   Parameters = c("phi","lambda", "gamma", "b00", "b10", "b20", "b01", "b11", "b21"),
   Mean = format(round(colMeans(pmean, na.rm = TRUE), 3), scientific = FALSE, nsmall = 3),  
@@ -172,38 +148,30 @@ output_final <- data.frame(
 ) 
 
 # Classification
-
-lisup <- list()
-ome   <- list()
+ome <- lisup <- list()
 propor <- propor2 <- list()
 clasi  <- rep(NA, B)
-
-for (b in 1:B) {
-  
+                               
+for(b in 1:B){
   data <- data_gen[[b]]
-  
   x1 <- data$x 
   x2 <- data$z 
-  
   load(paste0("sim2_", b, ".RData"))
-  
   phi <- (sim_final$phi)
-  
   b0 <- (sim_final$beta1[,1]) # omega
   b1 <- (sim_final$beta1[,2])  
-  b2 <- (sim_final$beta1[,3]) 
-  
+  b2 <- (sim_final$beta1[,3])
   b_0 <- (sim_final$beta2[,1]) # mu
   b_1 <- (sim_final$beta2[,2]) 
   b_2 <- (sim_final$beta2[,3]) 
   
-  # calculating omega and mu
+  # Calculating omega and mu
   mu         <- exp(b_0+b_1*x1[b]+b_2*x2[b])
   lisup[[b]] <- (1 - exp(-mu/(1+mu*phi)))
   b_ome      <- (b0+b1*x1[b]+b2*x2[b])
   ome[[b]]   <- exp(b_ome)/(1+exp(b_ome))
   
-  # comparation
+  # Comparation
   compa      <-  ome[[b]] < lisup[[b]] 
   compa2     <-  ome[[b]] < 1
   propor[[b]]  <- mean(compa)
@@ -212,7 +180,7 @@ for (b in 1:B) {
   prop  <- propor[[b]]
   prop2 <- propor2[[b]]
   
-  # classification
+  # Classification
   if(prop2 >= 0.95 & prop2 <= 1){
     if(prop >= 0.95 & prop <= 1){
       clasi[b] <- "Inflated"   
